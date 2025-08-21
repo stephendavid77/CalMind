@@ -1,0 +1,43 @@
+# CalMind Configuration Sample
+
+# Email sender configuration
+# If these are not set, the application will look for environment variables:
+# EMAIL_SENDER_EMAIL, EMAIL_SENDER_PASSWORD, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT
+email_sender:
+  email: "your_sender_email@example.com" # e.g., your_email@example.com
+  password: "your_email_app_password" # App password for your email (if using Gmail, for example)
+  smtp_server: "smtp.your_email_provider.com" # e.g., smtp.gmail.com
+  smtp_port: 587 # e.g., 587 for TLS, 465 for SSL
+
+# Google Gemini LLM configuration
+llm:
+  api_key: "YOUR_GEMINI_API_KEY" # Replace with your actual Gemini API Key
+
+# Users and their calendar configurations
+users:
+  - name: "Your Name"
+    report_to_email: "your_recipient_email@example.com" # Email address to send the report to
+    days_to_fetch: 30 # Optional: Number of days to fetch events for. Default is 30 if not specified.
+    calendars:
+      - type: "google"
+        name: "Your Google Calendar Name"
+        # For Google Calendar, you'll need credentials.json.
+        # Place it in the project root or specify its path here.
+        # credentials_path: "path/to/your/credentials.json"
+        # You can specify calendar IDs if you have multiple Google calendars
+        # calendar_ids:
+        #   - "primary"
+        #   - "another_calendar_id@group.calendar.google.com"
+#      - type: "apple"
+#        name: "Apple iCloud Calendar"
+        # Apple Calendar access is more complex and might require specific libraries or manual setup.
+        # This is a placeholder for future implementation.
+        # username: "your_icloud_email@example.com"
+        # password: "your_icloud_app_specific_password"
+#  - name: "Another User"
+#    report_to_email: "another_recipient_email@example.com"
+#    calendars:
+#      - type: "google"
+#        name: "Another Google Calendar Name"
+#        # calendar_ids:
+#        #   - "work_calendar_id@group.calendar.google.com"

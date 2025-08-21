@@ -1,0 +1,22 @@
+# Gitignore for CalMind project
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# IDEs
+.idea/
+.vscode/
+
+# Sensitive files
+config.yaml
+token.json
+credentials.json
+
+# Reports
+reports/
