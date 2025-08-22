@@ -1,34 +1,59 @@
 from typing import List
+import logging
+import os
 from calmind.calendars.base import CalendarEvent
 from calmind.llm.client import LLMClient
 
+logger = logging.getLogger(__name__)
+
 class LLMSummarizer:
-    def __init__(self, llm_client: LLMClient):
-        print("LLMSummarizer: Initializing LLM summarizer.")
+    def __init__(self, llm_client: LLMClient, context_file: str = 'calmind/llm/email_summary_context.md'):
+        logger.info("Initializing LLM summarizer.")
         self.llm_client = llm_client
+        self.context_file = context_file
+        self.context_content = self._load_context_file()
+
+    def _load_context_file(self) -> str:
+        if not os.path.exists(self.context_file):
+            logger.warning(f"Context file not found at {self.context_file}. LLM will operate without additional context.")
+            return ""
+        try:
+            with open(self.context_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            logger.info(f"Context file {self.context_file} loaded successfully.")
+            return content
+        except Exception as e:
+            logger.error(f"Error loading context file {self.context_file}: {e}")
+            return ""
 
     def summarize_events(self, events: List[CalendarEvent], user_name: str) -> str:
-        print(f"LLMSummarizer: Starting event summarization for {user_name} with {len(events)} events.")
+        logger.info(f"Starting event summarization for {user_name} with {len(events)} events.")
         if not events:
-            print("LLMSummarizer: No events provided for summarization.")
+            logger.info("No events provided for summarization.")
             return "No events to summarize."
 
-        prompt_parts = [
+        prompt_parts = []
+        if self.context_content:
+            prompt_parts.append(self.context_content)
+            prompt_parts.append("\n---\n") # Separator for context and main prompt
+
+        prompt_parts.append(
             f"Hello {user_name}, please summarize the following calendar events. "
             "Provide a concise overview, highlight key meetings or tasks, "
             "and suggest any useful information or potential conflicts that might be relevant to the user. "
             "Also, add any useful info that might be relevant and useful to the enduser."
             "\n\nCalendar Events:"
-        ]
+        )
 
         for event in events:
             prompt_parts.append(str(event)) # Using the __str__ method of CalendarEvent
 
         prompt = "\n".join(prompt_parts)
-        print("LLMSummarizer: Sending prompt to LLM for summarization...")
+        logger.info("Sending prompt to LLM for summarization...")
         summary = self.llm_client.generate_content(prompt)
-        print("LLMSummarizer: Summarization complete.")
+        logger.info("Summarization complete.")
         return summary
+
 
 if __name__ == '__main__':
     """
@@ -63,7 +88,8 @@ if __name__ == '__main__':
     #     ]
 
     #     summary_text = summarizer.summarize_events(sample_events, "Test User")
-    #     print("\nGenerated Summary:")
-    #     print(summary_text)
+    #     logger.info("\nGenerated Summary:")
+    #     logger.info(summary_text)
     # else:
-    #     print("LLM API key not configured or is default. Cannot run summarizer example.")
+    #     logger.warning("LLM API key not configured or is default. Cannot run summarizer example.")
+

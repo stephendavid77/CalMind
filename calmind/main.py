@@ -1,7 +1,18 @@
 import os
+import shutil
+import logging
 from datetime import datetime, timedelta
 
-from calmind.config import Config
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, # Reverted to INFO
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+# Get the root logger and set its level to INFO as well
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
+
+from calmind.config import Config, UserConfig
 from calmind.calendars.google_calendar import GoogleCalendar
 from calmind.calendars.apple_calendar import AppleCalendar
 from calmind.llm.client import LLMClient
@@ -11,137 +22,165 @@ from calmind.emailing.sender import EmailSender
 
 class CalMindApp:
     def __init__(self, config_path='config.yaml'):
-        print(f"CalMindApp: Initializing application with config path: {config_path}")
+        logger.info(f"Initializing application with config path: {config_path}")
         self.config = Config(config_path)
         self.llm_client = None
         self.llm_summarizer = None
         self.report_generator = ReportGenerator()
         self.email_sender = None
+        logger.info("Application components initialized.")
 
     def _initialize_llm(self):
-        print("CalMindApp: Initializing LLM components...")
-        api_key = self.config.get_llm_api_key()
-        if not api_key or api_key == "YOUR_GEMINI_API_KEY":
-            print("CalMindApp Warning: LLM API key not configured or is default. LLM summarization will not work.")
+        logger.info("Initializing LLM components...")
+        llm_config = self.config.get_llm_config()
+        if not llm_config or not llm_config.api_key or llm_config.api_key == "YOUR_GEMINI_API_KEY":
+            logger.warning("LLM API key not configured or is default. LLM summarization will not work.")
             return False
         try:
-            self.llm_client = LLMClient(api_key)
-            self.llm_summarizer = LLMSummarizer(self.llm_client)
-            print("CalMindApp: LLM components initialized successfully.")
+            self.llm_client = LLMClient(llm_config.api_key)
+            self.llm_summarizer = LLMSummarizer(self.llm_client, context_file='calmind/llm/email_summary_context.md')
+            logger.info("LLM components initialized successfully.")
             return True
         except Exception as e:
-            print(f"CalMindApp Error: Error initializing LLM: {e}")
+            logger.error(f"Error initializing LLM: {e}")
             return False
 
     def _initialize_email_sender(self):
-        print("CalMindApp: Initializing email sender...")
+        logger.info("Initializing email sender...")
         email_config = self.config.get_email_sender_config()
-        if not all([email_config['email'], email_config['password'], email_config['smtp_server'], email_config['smtp_port']]):
-            print("CalMindApp Warning: Email sender configuration incomplete. Email reports will not be sent.")
+        
+        if not email_config or not all([email_config.email, email_config.password, email_config.smtp_server, email_config.smtp_port]):
+            logger.warning("Email sender configuration incomplete. Email reports will not be sent.")
             return False
         try:
-            self.email_sender = EmailSender(
-                sender_email=email_config['email'],
-                sender_password=email_config['password'],
-                smtp_server=email_config['smtp_server'],
-                smtp_port=email_config['smtp_port']
-            )
-            print("CalMindApp: Email sender initialized successfully.")
+            self.email_sender = EmailSender(config=email_config)
+            logger.info("Email sender initialized successfully.")
             return True
         except Exception as e:
-            print(f"CalMindApp Error: Error initializing email sender: {e}")
+            logger.error(f"Error initializing email sender: {e}")
             return False
 
-    def run_for_user(self, user_config: dict):
-        user_name = user_config.get('name', 'Unknown User')
-        report_to_email = user_config.get('report_to_email')
-        days_to_fetch = user_config.get('days_to_fetch', 30)
+    def run_for_user(self, user_config: UserConfig):
+        user_name = user_config.name
+        report_to_email = user_config.report_to_email
+        days_to_fetch = user_config.days_to_fetch
 
-        print(f"\n--- CalMindApp: Processing for user: {user_name} ---")
+        logger.info(f"--- Processing for user: {user_name} ---")
+        logger.info(f"Report will be sent to: {report_to_email}")
+        logger.info(f"Fetching events for {days_to_fetch} days.")
 
         all_events = []
         start_date = datetime.now()
         end_date = start_date + timedelta(days=days_to_fetch)
-        print(f"CalMindApp: Fetching events from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')} for {user_name}.")
+        logger.info(f"Event fetch period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}.")
 
-        for cal_config in user_config.get('calendars', []):
-            cal_type = cal_config.get('type').lower()
-            cal_name = cal_config.get('name', 'Unnamed Calendar')
-            print(f"CalMindApp: Attempting to access {cal_type} calendar: {cal_name}")
+        calendars_to_process = user_config.calendars
+        if not calendars_to_process:
+            logger.warning(f"No calendars configured for user {user_name}. Skipping event fetch.")
+            return
+
+        for cal_union_config in calendars_to_process:
+            cal_config = cal_union_config.root 
+            cal_type = cal_config.type.lower()
+            cal_name = cal_config.name
+            logger.info(f"Attempting to access {cal_type} calendar: {cal_name}")
 
             calendar_instance = None
             if cal_type == 'google':
+                logger.info(f"Initializing GoogleCalendar for {cal_name}...")
                 calendar_instance = GoogleCalendar(cal_name, cal_config)
             elif cal_type == 'apple':
-                calendar_instance = AppleCalendar(cal_name, cal_config)
+                username = cal_config.username
+                password = cal_config.password
+                url = cal_config.url
+                logger.info(f"Initializing AppleCalendar for {cal_name} with username: {username}...")
+                if not username or not password:
+                    logger.error(f"Apple Calendar credentials (username/password) not found for {cal_name}. Skipping.")
+                    continue
+                calendar_instance = AppleCalendar(name=cal_name, config=cal_config)
             else:
-                print(f"CalMindApp Warning: Unsupported calendar type: {cal_type}. Skipping calendar {cal_name}.")
+                logger.warning(f"Unsupported calendar type: {cal_type}. Skipping calendar {cal_name}.")
                 continue
 
             if calendar_instance:
+                logger.info(f"Authenticating with {cal_name}...")
                 if calendar_instance.authenticate():
-                    print(f"CalMindApp: Authenticated with {cal_name}. Fetching events...")
+                    logger.info(f"Authenticated with {cal_name}. Fetching events...")
                     events = calendar_instance.get_events(start_date, end_date)
                     all_events.extend(events)
-                    print(f"CalMindApp: Fetched {len(events)} events from {cal_name}.")
+                    logger.info(f"Fetched {len(events)} events from {cal_name}.")
                 else:
-                    print(f"CalMindApp Error: Authentication failed for {cal_name}. Skipping event fetch.")
+                    logger.error(f"Authentication failed for {cal_name}. Skipping event fetch.")
             else:
-                print(f"CalMindApp Error: Calendar instance not created for {cal_name}.")
+                logger.error(f"Calendar instance not created for {cal_name}.")
 
         if not all_events:
-            print(f"CalMindApp: No events found for {user_name} in the specified period. Skipping summarization and reporting.")
+            logger.info(f"No events found for {user_name} in the specified period. Skipping summarization and reporting.")
             return
+
+        logger.info(f"Total events fetched for {user_name}: {len(all_events)}.")
 
         # Summarize events
         summary_content = "No summary generated due to LLM issues."
         if self.llm_summarizer:
-            print("CalMindApp: Summarizing events with LLM...")
+            logger.info("Summarizing events with LLM...")
             summary_content = self.llm_summarizer.summarize_events(all_events, user_name)
-            print("CalMindApp: Summary generated by LLM.")
+            logger.info("Summary generated by LLM.")
         else:
-            print("CalMindApp Warning: LLM summarizer not initialized. Skipping summarization and falling back to raw events.")
+            logger.warning("LLM summarizer not initialized. Skipping summarization and falling back to raw events.")
             # Fallback: just list events if LLM is not available
             summary_content = "## Raw Events (LLM not available)\n\n"
             for event in all_events:
-                summary_content += f"- {event.summary} ({event.start.strftime('%Y-%m-%d %H:%M')} - {event.end.strftime('%H:%M')})\n"
+                summary_content += f"- {event.summary} ({event.start} - {event.end})\n"
 
         # Generate reports
-        print("CalMindApp: Generating reports...")
+        logger.info("Generating reports...")
         html_report_path = self.report_generator.generate_html_report(user_name, summary_content)
         md_report_path = self.report_generator.generate_md_report(user_name, summary_content)
+        logger.info(f"Reports generated: HTML at {html_report_path}, Markdown at {md_report_path}.")
 
         # Send email
         if report_to_email and self.email_sender:
-            print(f"CalMindApp: Sending email report to {report_to_email}...")
+            logger.info(f"Sending email report to {report_to_email}...")
             try:
                 with open(html_report_path, 'r', encoding='utf-8') as f:
                     html_report_content = f.read()
                 subject = f"CalMind: Your Calendar Summary for {user_name}"
                 self.email_sender.send_email(report_to_email, subject, html_report_content)
-                print(f"CalMindApp: Email report sent to {report_to_email}.")
+                logger.info(f"Email report sent to {report_to_email}.")
             except Exception as e:
-                print(f"CalMindApp Error: Failed to send email report to {report_to_email}: {e}")
+                logger.error(f"Failed to send email report to {report_to_email}: {e}")
         else:
-            print("CalMindApp: Email not sent (recipient not specified or email sender not initialized).")
+            logger.info("Email not sent (recipient not specified or email sender not initialized).")
 
     def run(self):
-        print("CalMindApp: Starting CalMind application...")
-        if not self._initialize_llm():
-            print("CalMindApp: LLM will not be available for summarization.")
-        if not self._initialize_email_sender():
-            print("CalMindApp: Email sending will not be available.")
+        logger.info("Starting CalMind application...")
+        reports_dir = "reports"
+        if os.path.exists(reports_dir):
+            logger.info(f"Clearing existing reports in {reports_dir}...")
+            shutil.rmtree(reports_dir)
+        os.makedirs(reports_dir, exist_ok=True)
+        logger.info(f"Ensured {reports_dir} directory is clean.")
+        
+        # Initialize LLM and Email Sender based on new config structure
+        if not self.config.get_llm_config() or not self._initialize_llm():
+            logger.warning("LLM will not be available for summarization.")
+        if not self.config.get_email_sender_config() or not self._initialize_email_sender():
+            logger.warning("Email sending will not be available.")
 
         users_config = self.config.get_users_config()
         if not users_config:
-            print("CalMindApp Error: No users configured in config.yaml. Exiting.")
+            logger.error("No users configured in config.yaml. Exiting.")
             return
 
+        logger.info(f"Found {len(users_config)} user(s) in configuration.")
         for user_config in users_config:
             self.run_for_user(user_config)
 
-        print("CalMindApp: Application finished.")
+        logger.info("Application finished.")
 
 if __name__ == '__main__':
+    logger.info("Application started from main entry point.")
     app = CalMindApp()
     app.run()
+    logger.info("Application execution finished.")

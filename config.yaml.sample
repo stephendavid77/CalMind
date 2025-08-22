@@ -1,8 +1,7 @@
 # CalMind Configuration Sample
 
 # Email sender configuration
-# If these are not set, the application will look for environment variables:
-# EMAIL_SENDER_EMAIL, EMAIL_SENDER_PASSWORD, EMAIL_SMTP_SERVER, EMAIL_SMTP_PORT
+# Fields can be set here or via environment variables (e.g., EMAIL_SENDER_EMAIL, EMAIL_SENDER_PASSWORD).
 email_sender:
   email: "your_sender_email@example.com" # e.g., your_email@example.com
   password: "your_email_app_password" # App password for your email (if using Gmail, for example)
@@ -28,12 +27,16 @@ users:
         # calendar_ids:
         #   - "primary"
         #   - "another_calendar_id@group.calendar.google.com"
-#      - type: "apple"
-#        name: "Apple iCloud Calendar"
-        # Apple Calendar access is more complex and might require specific libraries or manual setup.
-        # This is a placeholder for future implementation.
-        # username: "your_icloud_email@example.com"
-        # password: "your_icloud_app_specific_password"
+      - type: "apple"
+        name: "Apple iCloud Calendar"
+        # For iCloud, you MUST use an app-specific password generated from your Apple ID account.
+        # See: https://support.apple.com/en-us/HT204397
+        username: "your_icloud_email@example.com"
+        password: "your_icloud_app_specific_password"
+        # Optional: If your CalDAV server URL is different from the default iCloud one.
+        # url: "https://caldav.icloud.com"
+        # Optional: Specify a particular calendar by name. If not specified, all calendars will be fetched.
+        # calendar_name: "My Main Calendar"
 #  - name: "Another User"
 #    report_to_email: "another_recipient_email@example.com"
 #    calendars:

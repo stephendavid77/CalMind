@@ -5,3 +5,7 @@ google-auth-oauthlib
 google-generativeai
 Flask
 markdown2
+caldav
+pytz
+email-validator
+pydantic-settings

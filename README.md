@@ -5,7 +5,7 @@ CalMind is a Python application designed to access your calendar events, summari
 ## Features
 
 *   **Calendar Integration:** Access events from Google Calendar (extensible to others).
-*   **LLM Summarization:** Utilizes Google Gemini to summarize calendar events, highlighting key information and potential conflicts.
+*   **LLM Summarization:** Utilizes Google Gemini to summarize calendar events, highlighting key information and potential conflicts. Context for LLM summarization (e.g., for email summaries) can be provided in `calmind/llm/email_summary_context.md`.
 *   **Report Generation:** Creates both HTML and Markdown reports of the summarized events.
 *   **Email Delivery:** Sends the generated HTML report to specified recipients.
 *   **Configurable:** Easily manage users, calendars, LLM settings, and email preferences via a `config.yaml` file.
@@ -30,13 +30,7 @@ cd CalMind
 
 ### 2. Install Dependencies
 
-It's highly recommended to use a virtual environment to manage dependencies.
-
-```bash
-python3 -m venv venv
-source venv/bin/activate # On Windows: `venv\Scripts\activate`
-pip install -r requirements.txt
-```
+Dependencies will be automatically installed when you run the application using the provided `run.sh` script.
 
 ### 3. Configuration (`config.yaml`)
 
@@ -48,14 +42,13 @@ The application's behavior is controlled by the `config.yaml` file. A sample fil
     ```bash
     cp config.yaml.sample config.yaml
     ```
-2.  **Edit `config.yaml`:** Open the `config.yaml` file in your text editor and fill in the details:
+2.  **Edit `config.yaml`:** Open the `config.yaml` file in your text editor and fill in the details. The configuration is now validated using Pydantic models, so ensure the structure and data types are correct. Errors will be logged if validation fails.
 
     *   **`email_sender`:**
         *   `email`: Your sender email address (e.g., `your_email@example.com`).
         *   `password`: **IMPORTANT:** For Gmail, you'll need to generate an "App password" from your Google Account security settings. Do NOT use your regular Google password. For other providers, consult their documentation for app-specific passwords or SMTP details.
         *   `smtp_server`: Your email provider's SMTP server (e.g., `smtp.gmail.com`).
         *   `smtp_port`: Your email provider's SMTP port (e.g., `587` for TLS, `465` for SSL).
-        *   *Alternatively*, you can set these values as environment variables (`EMAIL_SENDER_EMAIL`, `EMAIL_SENDER_PASSWORD`, `EMAIL_SMTP_SERVER`, `EMAIL_SMTP_PORT`).
 
     *   **`llm: api_key`:**
         *   Obtain a Google Gemini API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
@@ -81,19 +74,27 @@ The application's behavior is controlled by the `config.yaml` file. A sample fil
 
             *   **Apple iCloud Calendar (`type: "apple"`):**
                 *   This is currently a placeholder. Full implementation would require using a CalDAV client or similar.
+                *   For iCloud, you MUST use an app-specific password generated from your Apple ID account. See: [https://support.apple.com/en-us/HT204397](https://support.apple.com/en-us/HT204397)
+                *   You can also specify `username`, `password`, and `url` directly in the `config.yaml` for Apple Calendar entries.
 
 ### 4. Run the Application
 
 #### A. Standalone Application
 
-Run the main script from the project root directory:
+Run the application from the project root directory using the provided script:
 
 ```bash
-python3 -m calmind.main
+./run.sh
 ```
 
 *   **First Run (Google Calendar):** The first time you run it for a Google Calendar, a web browser window will open asking you to authenticate with your Google account and grant permissions. Complete this process. A `token.json` file will be created in your project root to store authentication tokens for future runs.
-*   **Output:** The application will print logs to the console, generate HTML and Markdown reports in the `reports/` directory, and send an email to the configured `report_to_email` address.
+*   **Output & Logging:** The application now uses Python's `logging` module for all output. You will see detailed logs in your console.
+    *   `INFO` level messages provide general operational information.
+    *   `WARNING` messages indicate recoverable issues or unusual states (e.g., LLM not configured).
+    *   `ERROR` messages indicate non-recoverable issues.
+    *   `DEBUG` messages (if logging level is set to DEBUG) provide detailed information, including masked API keys and full LLM prompts/responses.
+*   **Reports Folder:** The `reports/` directory will be automatically cleared at the beginning of each application execution before new HTML and Markdown reports are generated.
+*   **Email Delivery:** An email will be sent to the configured `report_to_email` address if email sender is properly set up.
 
 #### B. Web Application (Flask)
 
@@ -107,13 +108,16 @@ Then, open your web browser and navigate to `http://127.0.0.1:5000/`. You will s
 
 ## Troubleshooting
 
-*   **`ModuleNotFoundError: No module named 'calmind'`:** Ensure you are running the script from the project root directory using `python3 -m calmind.main`.
-*   **`IndentationError`:** These usually occur due to incorrect spacing. Ensure your code editor is set to use 4 spaces for indentation. If you encounter them in the example usage blocks, they are likely due to subtle parsing issues; ensure those blocks are fully commented out or removed.
+*   **Configuration Validation Errors:** If you encounter errors related to `config.yaml` not being found or Pydantic validation failures, ensure:
+    *   You are running the application from the project root directory using `python3 -m calmind.main`.
+    *   Your `config.yaml` file is correctly formatted and all required fields are present and have valid data types as per the Pydantic models (e.g., valid email formats, correct integer types for ports). Check the detailed error messages in the logs for specific validation failures.
 *   **`LLMClient Error: 404 models/gemini-pro is not found...` or `429 You exceeded your current quota...`:**
     *   **Model Not Found:** The model name might be incorrect or unavailable for your API key/region. Verify the correct model name (e.g., `gemini-1.5-pro-latest`) in `calmind/llm/client.py`.
     *   **Quota Exceeded:** You have hit your usage limits for the Gemini API. Wait for your quota to reset, or check your Google Cloud Project quotas and consider upgrading your plan if needed.
 *   **`Error 400: redirect_uri_mismatch`:** Ensure `http://localhost` and `http://127.0.0.1` are correctly added to "Authorized redirect URIs" for your "Desktop app" OAuth 2.0 Client ID in Google Cloud Console.
 *   **`Error 403: access_denied` (Google verification process):** Add your Google account as a "Test user" in the OAuth consent screen settings in Google Cloud Console.
+*   **Authentication Failed (Apple Calendar):** Ensure you are using an [app-specific password](https://support.apple.com/en-us/HT204397) for your iCloud account in `config.yaml`, not your primary Apple ID password.
+*   **Email Sending Failed (`nodename nor servname provided, or not known` or similar):** Verify your `smtp_server` and `smtp_port` settings in `config.yaml` are correct for your email provider. Also, ensure your `sender_email` and `sender_password` are accurate and that your email account allows third-party access or app passwords.
 
 ## Project Structure
 
