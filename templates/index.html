@@ -1,63 +1,79 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CalMind - Calendar Summarizer</title>
+    <title>CalMind - Interactive Reporter</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         h1 { color: #0056b3; text-align: center; margin-bottom: 30px; }
-        .section { margin-bottom: 25px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
-        .section h2 { margin-top: 0; color: #0056b3; }
-        .button-group { text-align: center; margin-top: 30px; }
-        .button { display: inline-block; padding: 10px 20px; margin: 5px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; transition: background-color 0.3s ease; }
-        .button:hover { background-color: #218838; }
-        .user-list ul { list-style: none; padding: 0; }
-        .user-list li { background-color: #e9ecef; padding: 10px 15px; margin-bottom: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .user-list li span { font-weight: bold; }
-        .user-list li a { background-color: #007bff; }
-        .user-list li a:hover { background-color: #0056b3; }
+        .form-section { margin-bottom: 25px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, button { width: 100%; padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        button { background-color: #28a745; color: white; cursor: pointer; transition: background-color 0.3s ease; }
+        button:hover { background-color: #218838; }
+        .report-section { margin-top: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; background-color: #fff; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>CalMind - Calendar Summarizer</h1>
+        <h1>CalMind - Interactive Reporter</h1>
 
-        <div class="section">
-            <h2>Run All Reports</h2>
-            <p>Click the button below to generate calendar summaries for all configured users and send them via email.</p>
-            <div class="button-group">
-                <a href="/run_all_reports" class="button">Run All Reports</a>
+        <div class="form-section">
+            <form method="POST" action="/">
+                <div class="form-group">
+                    <label for="user-select">Select User:</label>
+                    <select id="user-select" name="user" onchange="updateSources()">
+                        <option value="">-- Select a User --</option>
+                        {% for user in users %}
+                            <option value="{{ user.name }}">{{ user.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="source-select">Select Source:</label>
+                    <select id="source-select" name="source">
+                        <option value="">-- Select a Source --</option>
+                    </select>
+                </div>
+                <button type="submit">Generate Report</button>
+            </form>
+        </div>
+
+        {% if report_content %}
+            <div class="report-section">
+                <h2>Generated Report</h2>
+                <div>{{ report_content|safe }}</div>
             </div>
-        </div>
-
-        <div class="section user-list">
-            <h2>Run Report for Specific User</h2>
-            <p>Select a user from the list below to generate and send their calendar summary.</p>
-            <ul>
-                {% if users %}
-                    {% for user in users %}
-                        <li>
-                            <span>{{ user.name }}</span>
-                            <a href="/run_report/{{ user.name }}" class="button">Run Report</a>
-                        </li>
-                    {% endfor %}
-                {% else %}
-                    <li>No users configured in config.yaml.</li>
-                {% endif %}
-            </ul>
-        </div>
-
-        <div class="section">
-            <h2>How to Use</h2>
-            <p>1. Edit <code>config.yaml</code> to configure your email sender, LLM API key, and user calendars.</p>
-            <p>2. For Google Calendar, ensure you have <code>credentials.json</code> in the project root and authenticate when prompted.</p>
-            <p>3. Run the standalone app: <code>python calmind/main.py</code></p>
-            <p>4. Or run the web app: <code>python calmind/webapp.py</code> and navigate to <code>http://127.0.0.1:5000/</code> in your browser.</p>
-            <p>5. Check the <code>reports/</code> folder for generated HTML and Markdown files, and your configured email for the summary.</p>
-        </div>
-
+        {% endif %}
     </div>
+
+    <script>
+        const users = {{ users|tojson }};
+
+        function updateSources() {
+            const userSelect = document.getElementById('user-select');
+            const sourceSelect = document.getElementById('source-select');
+            const selectedUser = userSelect.value;
+
+            // Clear existing options
+            sourceSelect.innerHTML = '<option value="">-- Select a Source --</option>';
+
+            if (selectedUser) {
+                const user = users.find(u => u.name === selectedUser);
+                if (user) {
+                    user.sources.forEach(source => {
+                        const option = document.createElement('option');
+                        option.value = source.name;
+                        option.textContent = source.name;
+                        sourceSelect.appendChild(option);
+                    });
+                }
+            }
+        }
+    </script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+
 import yaml
 import os
 import logging
@@ -32,14 +33,21 @@ class AppleCalendarConfig(BaseModel):
     url: Optional[HttpUrl] = None
     calendar_name: Optional[str] = None
 
-class UserCalendarConfig(RootModel[Union[GoogleCalendarConfig, AppleCalendarConfig]]):
+class TrelloConfig(BaseModel):
+    type: str = "trello"
+    name: str
+    api_key: str
+    api_token: str
+    board_id: str
+
+class UserSourceConfig(RootModel[Union[GoogleCalendarConfig, AppleCalendarConfig, TrelloConfig]]):
     pass
 
 class UserConfig(BaseModel):
     name: str
     report_to_email: EmailStr
     days_to_fetch: int = 30
-    calendars: List[UserCalendarConfig] = []
+    sources: List[UserSourceConfig] = []
 
 class AppConfig(BaseModel):
     email_sender: EmailConfig = Field(default_factory=EmailConfig)
@@ -78,34 +86,3 @@ class Config:
 
     def get_users_config(self) -> List[UserConfig]:
         return self._app_config.users
-
-if __name__ == '__main__':
-    # Example usage:
-    try:
-        config = Config()
-        email_config = config.get_email_sender_config()
-        if email_config:
-            logger.info(f"Email Sender Config: Email={email_config.email}, SMTP={email_config.smtp_server}:{email_config.smtp_port}")
-        else:
-            logger.info("Email Sender Config: Not configured.")
-
-        llm_config = config.get_llm_config()
-        if llm_config:
-            logger.info(f"LLM API Key: {llm_config.api_key[:5]}...{llm_config.api_key[-5:]}")
-        else:
-            logger.info("LLM API Key: Not configured.")
-
-        logger.info("Users Config:")
-        for user in config.get_users_config():
-            logger.info(f"  - Name: {user.name}")
-            logger.info(f"    Report To: {user.report_to_email}")
-            logger.info(f"    Days To Fetch: {user.days_to_fetch}")
-            logger.info(f"    Calendars:")
-            for calendar_union in user.calendars:
-                calendar = calendar_union.root # Access the actual model from the Union
-                if isinstance(calendar, GoogleCalendarConfig):
-                    logger.info(f"      - Type: {calendar.type}, Name: {calendar.name}, Credentials Path: {calendar.credentials_path}")
-                elif isinstance(calendar, AppleCalendarConfig):
-                    logger.info(f"      - Type: {calendar.type}, Name: {calendar.name}, Username: {calendar.username}, Password (provided): {'Yes' if calendar.password else 'No'}, URL: {calendar.url}")
-    except Exception as e:
-        logger.error(f"Error during example usage: {e}")

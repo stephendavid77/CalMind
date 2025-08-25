@@ -9,3 +9,5 @@ caldav
 pytz
 email-validator
 pydantic-settings
+py-trello
+python-dotenv

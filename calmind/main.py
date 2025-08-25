@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 from calmind.config import Config, UserConfig
 from calmind.calendars.google_calendar import GoogleCalendar
 from calmind.calendars.apple_calendar import AppleCalendar
+from calmind.trello.trello_client import TrelloService
 from calmind.llm.client import LLMClient
 from calmind.llm.summarizer import LLMSummarizer
+from calmind.trello.trello_summarizer import TrelloSummarizer
 from calmind.reporting.generator import ReportGenerator
 from calmind.emailing.sender import EmailSender
 
@@ -26,6 +28,7 @@ class CalMindApp:
         self.config = Config(config_path)
         self.llm_client = None
         self.llm_summarizer = None
+        self.trello_summarizer = None
         self.report_generator = ReportGenerator()
         self.email_sender = None
         logger.info("Application components initialized.")
@@ -39,6 +42,7 @@ class CalMindApp:
         try:
             self.llm_client = LLMClient(llm_config.api_key)
             self.llm_summarizer = LLMSummarizer(self.llm_client, context_file='calmind/llm/email_summary_context.md')
+            self.trello_summarizer = TrelloSummarizer(self.llm_client)
             logger.info("LLM components initialized successfully.")
             return True
         except Exception as e:
@@ -60,109 +64,83 @@ class CalMindApp:
             logger.error(f"Error initializing email sender: {e}")
             return False
 
-    def run_for_user(self, user_config: UserConfig):
+    def run_for_user(self, user_config: UserConfig, source_name: str = None):
         user_name = user_config.name
         report_to_email = user_config.report_to_email
         days_to_fetch = user_config.days_to_fetch
 
         logger.info(f"--- Processing for user: {user_name} ---")
-        logger.info(f"Report will be sent to: {report_to_email}")
-        logger.info(f"Fetching events for {days_to_fetch} days.")
+        if source_name:
+            logger.info(f"Processing for source: {source_name}")
 
         all_events = []
+        all_cards = []
         start_date = datetime.now()
         end_date = start_date + timedelta(days=days_to_fetch)
-        logger.info(f"Event fetch period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}.")
 
-        calendars_to_process = user_config.calendars
-        if not calendars_to_process:
-            logger.warning(f"No calendars configured for user {user_name}. Skipping event fetch.")
-            return
+        sources_to_process = user_config.sources
+        if source_name:
+            sources_to_process = [s for s in sources_to_process if s.root.name == source_name]
 
-        for cal_union_config in calendars_to_process:
-            cal_config = cal_union_config.root 
-            cal_type = cal_config.type.lower()
-            cal_name = cal_config.name
-            logger.info(f"Attempting to access {cal_type} calendar: {cal_name}")
+        if not sources_to_process:
+            logger.warning(f"No sources found for user {user_name} with name {source_name}. Skipping.")
+            return "No sources found."
 
-            calendar_instance = None
-            if cal_type == 'google':
-                logger.info(f"Initializing GoogleCalendar for {cal_name}...")
-                calendar_instance = GoogleCalendar(cal_name, cal_config)
-            elif cal_type == 'apple':
-                username = cal_config.username
-                password = cal_config.password
-                url = cal_config.url
-                logger.info(f"Initializing AppleCalendar for {cal_name} with username: {username}...")
-                if not username or not password:
-                    logger.error(f"Apple Calendar credentials (username/password) not found for {cal_name}. Skipping.")
-                    continue
-                calendar_instance = AppleCalendar(name=cal_name, config=cal_config)
-            else:
-                logger.warning(f"Unsupported calendar type: {cal_type}. Skipping calendar {cal_name}.")
-                continue
+        for source_union_config in sources_to_process:
+            source_config = source_union_config.root 
+            source_type = source_config.type.lower()
+            current_source_name = source_config.name
+            logger.info(f"Attempting to access {source_type} source: {current_source_name}")
 
-            if calendar_instance:
-                logger.info(f"Authenticating with {cal_name}...")
+            if source_type == 'google':
+                calendar_instance = GoogleCalendar(current_source_name, source_config)
                 if calendar_instance.authenticate():
-                    logger.info(f"Authenticated with {cal_name}. Fetching events...")
                     events = calendar_instance.get_events(start_date, end_date)
                     all_events.extend(events)
-                    logger.info(f"Fetched {len(events)} events from {cal_name}.")
-                else:
-                    logger.error(f"Authentication failed for {cal_name}. Skipping event fetch.")
+            elif source_type == 'apple':
+                calendar_instance = AppleCalendar(name=current_source_name, config=source_config)
+                if calendar_instance.authenticate():
+                    events = calendar_instance.get_events(start_date, end_date)
+                    all_events.extend(events)
+            elif source_type == 'trello':
+                trello_service = TrelloService(api_key=source_config.api_key, api_token=source_config.api_token, board_id=source_config.board_id)
+                cards = trello_service.get_cards()
+                all_cards.extend(cards)
             else:
-                logger.error(f"Calendar instance not created for {cal_name}.")
+                logger.warning(f"Unsupported source type: {source_type}. Skipping source {current_source_name}.")
+                continue
 
-        if not all_events:
-            logger.info(f"No events found for {user_name} in the specified period. Skipping summarization and reporting.")
-            return
+        summary_content = ""
+        if all_events:
+            if self.llm_summarizer:
+                summary_content += self.llm_summarizer.summarize_events(all_events, user_name)
+        
+        if all_cards:
+            if self.trello_summarizer:
+                summary_content += self.trello_summarizer.summarize_cards(all_cards)
 
-        logger.info(f"Total events fetched for {user_name}: {len(all_events)}.")
+        if not summary_content:
+            return "No events or cards found to summarize."
 
-        # Summarize events
-        summary_content = "No summary generated due to LLM issues."
-        if self.llm_summarizer:
-            logger.info("Summarizing events with LLM...")
-            summary_content = self.llm_summarizer.summarize_events(all_events, user_name)
-            logger.info("Summary generated by LLM.")
-        else:
-            logger.warning("LLM summarizer not initialized. Skipping summarization and falling back to raw events.")
-            # Fallback: just list events if LLM is not available
-            summary_content = "## Raw Events (LLM not available)\n\n"
-            for event in all_events:
-                summary_content += f"- {event.summary} ({event.start} - {event.end})\n"
-
-        # Generate reports
-        logger.info("Generating reports...")
         html_report_path = self.report_generator.generate_html_report(user_name, summary_content)
-        md_report_path = self.report_generator.generate_md_report(user_name, summary_content)
-        logger.info(f"Reports generated: HTML at {html_report_path}, Markdown at {md_report_path}.")
+        self.report_generator.generate_md_report(user_name, summary_content)
 
-        # Send email
+        with open(html_report_path, 'r', encoding='utf-8') as f:
+            html_report_content = f.read()
+
         if report_to_email and self.email_sender:
-            logger.info(f"Sending email report to {report_to_email}...")
-            try:
-                with open(html_report_path, 'r', encoding='utf-8') as f:
-                    html_report_content = f.read()
-                subject = f"CalMind: Your Calendar Summary for {user_name}"
-                self.email_sender.send_email(report_to_email, subject, html_report_content)
-                logger.info(f"Email report sent to {report_to_email}.")
-            except Exception as e:
-                logger.error(f"Failed to send email report to {report_to_email}: {e}")
-        else:
-            logger.info("Email not sent (recipient not specified or email sender not initialized).")
+            subject = f"CalMind: Your Summary for {user_name}"
+            self.email_sender.send_email(report_to_email, subject, html_report_content)
+
+        return html_report_content
 
     def run(self):
         logger.info("Starting CalMind application...")
         reports_dir = "reports"
         if os.path.exists(reports_dir):
-            logger.info(f"Clearing existing reports in {reports_dir}...")
             shutil.rmtree(reports_dir)
         os.makedirs(reports_dir, exist_ok=True)
-        logger.info(f"Ensured {reports_dir} directory is clean.")
         
-        # Initialize LLM and Email Sender based on new config structure
         if not self.config.get_llm_config() or not self._initialize_llm():
             logger.warning("LLM will not be available for summarization.")
         if not self.config.get_email_sender_config() or not self._initialize_email_sender():
@@ -173,7 +151,6 @@ class CalMindApp:
             logger.error("No users configured in config.yaml. Exiting.")
             return
 
-        logger.info(f"Found {len(users_config)} user(s) in configuration.")
         for user_config in users_config:
             self.run_for_user(user_config)
 
@@ -181,6 +158,8 @@ class CalMindApp:
 
 if __name__ == '__main__':
     logger.info("Application started from main entry point.")
-    app = CalMindApp()
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, '..', 'config.yaml')
+    app = CalMindApp(config_path=config_path)
     app.run()
     logger.info("Application execution finished.")

@@ -1,14 +1,15 @@
-# CalMind: Calendar Summarizer and Reporter
+# CalMind: Calendar and Trello Summarizer and Reporter
 
-CalMind is a Python application designed to access your calendar events, summarize them using a Large Language Model (LLM), and then generate reports (HTML and Markdown) and send them via email. It supports multiple users, each with potentially multiple calendars (Google Calendar implemented, Apple Calendar as a placeholder).
+CalMind is a Python application designed to access your calendar events and Trello cards, summarize them using a Large Language Model (LLM), and then generate reports (HTML and Markdown) and send them via email. It supports multiple users, each with potentially multiple sources (Google Calendar, Apple Calendar, and Trello).
 
 ## Features
 
-*   **Calendar Integration:** Access events from Google Calendar (extensible to others).
-*   **LLM Summarization:** Utilizes Google Gemini to summarize calendar events, highlighting key information and potential conflicts. Context for LLM summarization (e.g., for email summaries) can be provided in `calmind/llm/email_summary_context.md`.
-*   **Report Generation:** Creates both HTML and Markdown reports of the summarized events.
+*   **Calendar Integration:** Access events from Google Calendar and Apple Calendar.
+*   **Trello Integration:** Access cards from Trello boards.
+*   **LLM Summarization:** Utilizes Google Gemini to summarize calendar events and Trello cards, highlighting key information and potential conflicts.
+*   **Report Generation:** Creates both HTML and Markdown reports of the summarized events and cards.
 *   **Email Delivery:** Sends the generated HTML report to specified recipients.
-*   **Configurable:** Easily manage users, calendars, LLM settings, and email preferences via a `config.yaml` file.
+*   **Configurable:** Easily manage users, sources, LLM settings, and email preferences via a `config.yaml` file.
 *   **Dual Mode:** Can be run as a standalone command-line application or a simple web application.
 
 ## Getting Started
@@ -20,6 +21,7 @@ Follow these steps to set up and run CalMind on your local machine.
 *   Python 3.8+
 *   `pip` (Python package installer)
 *   A Google Account with access to Google Cloud Console and Google Gemini API.
+*   A Trello account.
 
 ### 1. Clone the Repository
 
@@ -30,7 +32,7 @@ cd CalMind
 
 ### 2. Install Dependencies
 
-Dependencies will be automatically installed when you run the application using the provided `run.sh` script.
+The dependencies are listed in `requirements.txt` and will be installed automatically by the `run_standalone.sh` and `run_webapp.sh` scripts.
 
 ### 3. Configuration (`config.yaml`)
 
@@ -56,7 +58,7 @@ The application's behavior is controlled by the `config.yaml` file. A sample fil
 
     *   **`users`:**
         *   Configure one or more users. Each user can have a `name`, `report_to_email`, and `days_to_fetch` (default is 30 days if not specified).
-        *   **`calendars`:** Define the calendars for each user.
+        *   **`sources`:** Define the sources for each user.
 
             *   **Google Calendar (`type: "google"`):**
                 1.  **Enable Google Calendar API:** In your Google Cloud Project, go to **APIs & Services > Library** and enable the "Google Calendar API".
@@ -77,22 +79,32 @@ The application's behavior is controlled by the `config.yaml` file. A sample fil
                 *   For iCloud, you MUST use an app-specific password generated from your Apple ID account. See: [https://support.apple.com/en-us/HT204397](https://support.apple.com/en-us/HT204397)
                 *   You can also specify `username`, `password`, and `url` directly in the `config.yaml` for Apple Calendar entries.
 
+            *   **Trello (`type: "trello"`):**
+                1.  **Get your API Key and Token:**
+                    *   Log in to your Trello account.
+                    *   Go to [https://trello.com/power-ups/admin](https://trello.com/power-ups/admin) to get your API key.
+                    *   To get your token, you can generate one by visiting a URL in the format: `https://trello.com/1/authorize?key=YOUR_API_KEY&name=CalMind&scope=read&expiration=never&response_type=token`. Replace `YOUR_API_KEY` with the key you just obtained.
+                2.  **Get your Board ID:**
+                    *   Open the Trello board you want to use.
+                    *   The Board ID is part of the URL. For example, in `https://trello.com/b/BOARD_ID/board-name`, the `BOARD_ID` is what you need.
+                3.  **Add to `config.yaml`:** Add the `api_key`, `api_token`, and `board_id` to the Trello source configuration.
+
 ### 4. Run the Application
+
+There are two ways to run the application:
 
 #### A. Standalone Application
 
-Run the application from the project root directory using the provided script:
+Run the standalone application from the project root directory using the provided script:
 
 ```bash
-./run.sh
+./run_standalone.sh
 ```
+
+This will run the application in your terminal and you will see the logs in your console.
 
 *   **First Run (Google Calendar):** The first time you run it for a Google Calendar, a web browser window will open asking you to authenticate with your Google account and grant permissions. Complete this process. A `token.json` file will be created in your project root to store authentication tokens for future runs.
 *   **Output & Logging:** The application now uses Python's `logging` module for all output. You will see detailed logs in your console.
-    *   `INFO` level messages provide general operational information.
-    *   `WARNING` messages indicate recoverable issues or unusual states (e.g., LLM not configured).
-    *   `ERROR` messages indicate non-recoverable issues.
-    *   `DEBUG` messages (if logging level is set to DEBUG) provide detailed information, including masked API keys and full LLM prompts/responses.
 *   **Reports Folder:** The `reports/` directory will be automatically cleared at the beginning of each application execution before new HTML and Markdown reports are generated.
 *   **Email Delivery:** An email will be sent to the configured `report_to_email` address if email sender is properly set up.
 
@@ -101,23 +113,27 @@ Run the application from the project root directory using the provided script:
 Run the Flask web application from the project root directory:
 
 ```bash
-python3 -m calmind.webapp
+./run_webapp.sh
 ```
 
 Then, open your web browser and navigate to `http://127.0.0.1:5000/`. You will see a simple interface to trigger reports for individual users or all users.
 
 ## Troubleshooting
 
-*   **Configuration Validation Errors:** If you encounter errors related to `config.yaml` not being found or Pydantic validation failures, ensure:
-    *   You are running the application from the project root directory using `python3 -m calmind.main`.
-    *   Your `config.yaml` file is correctly formatted and all required fields are present and have valid data types as per the Pydantic models (e.g., valid email formats, correct integer types for ports). Check the detailed error messages in the logs for specific validation failures.
-*   **`LLMClient Error: 404 models/gemini-pro is not found...` or `429 You exceeded your current quota...`:**
-    *   **Model Not Found:** The model name might be incorrect or unavailable for your API key/region. Verify the correct model name (e.g., `gemini-1.5-pro-latest`) in `calmind/llm/client.py`.
-    *   **Quota Exceeded:** You have hit your usage limits for the Gemini API. Wait for your quota to reset, or check your Google Cloud Project quotas and consider upgrading your plan if needed.
-*   **`Error 400: redirect_uri_mismatch`:** Ensure `http://localhost` and `http://127.0.0.1` are correctly added to "Authorized redirect URIs" for your "Desktop app" OAuth 2.0 Client ID in Google Cloud Console.
-*   **`Error 403: access_denied` (Google verification process):** Add your Google account as a "Test user" in the OAuth consent screen settings in Google Cloud Console.
-*   **Authentication Failed (Apple Calendar):** Ensure you are using an [app-specific password](https://support.apple.com/en-us/HT204397) for your iCloud account in `config.yaml`, not your primary Apple ID password.
-*   **Email Sending Failed (`nodename nor servname provided, or not known` or similar):** Verify your `smtp_server` and `smtp_port` settings in `config.yaml` are correct for your email provider. Also, ensure your `sender_email` and `sender_password` are accurate and that your email account allows third-party access or app passwords.
+*   **Configuration Validation Errors:** If you encounter errors related to `config.yaml` not being found or Pydantic validation failures, ensure your `config.yaml` file is correctly formatted and all required fields are present and have valid data types.
+*   **`LLMClient Error`:** Check your Gemini API key and model name in `calmind/llm/client.py`.
+*   **`Error 400: redirect_uri_mismatch`:** Ensure `http://localhost` and `http://127.0.0.1` are in your Google Cloud Console OAuth 2.0 Client ID's "Authorized redirect URIs".
+*   **`Error 403: access_denied`:** Add your Google account as a "Test user" in the OAuth consent screen settings.
+*   **Authentication Failed (Apple Calendar):** Use an app-specific password.
+*   **Email Sending Failed:** Verify your SMTP settings in `config.yaml`.
+*   **`SSLError` on macOS:** If you encounter an `SSLError` with the message `certificate verify failed: unable to get local issuer certificate`, it means Python is unable to find the root SSL certificates. This is a known issue on macOS. You can try the following workarounds:
+    *   **Reinstall Python:** A fresh installation of Python might resolve the issue.
+    *   **Disable SSL Verification (for local development only):** Open the `calmind/trello/trello_client.py` file and uncomment the following lines:
+        ```python
+        # session = requests.Session()
+        # session.verify = False
+        # self.client.http_service.session = session
+        ```
 
 ## Project Structure
 
@@ -133,9 +149,15 @@ CalMind/
 │   │   ├── base.py         # Base Calendar class and CalendarEvent
 │   │   ├── google_calendar.py # Google Calendar implementation
 │   │   └── apple_calendar.py  # Apple Calendar placeholder
+│   ├── trello/
+│   │   ├── __init__.py
+│   │   ├── trello_client.py   # Trello client
+│   │   └── trello_summarizer.py # Trello summarization logic
 │   ├── llm/
 │   │   ├── __init__.py
 │   │   ├── client.py       # LLM (Gemini) client
+│   │   ├── email_summary_context.md
+│   │   ├── trello_summary_context.md
 │   │   └── summarizer.py   # LLM summarization logic
 │   ├── reporting/
 │   │   ├── __init__.py
@@ -149,6 +171,8 @@ CalMind/
 ├── reports/                # Generated reports will be saved here (ignored by Git)
 ├── config.yaml.sample      # Sample configuration file
 ├── requirements.txt        # Python dependencies
+├── run_standalone.sh       # Script to run the standalone application
+├── run_webapp.sh           # Script to run the web application
 └── .gitignore              # Specifies files to ignore in Git
 ```
 

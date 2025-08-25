@@ -1,3 +1,4 @@
+
 # CalMind Configuration Sample
 
 # Email sender configuration
@@ -12,12 +13,12 @@ email_sender:
 llm:
   api_key: "YOUR_GEMINI_API_KEY" # Replace with your actual Gemini API Key
 
-# Users and their calendar configurations
+# Users and their sources (calendars, Trello, etc.)
 users:
   - name: "Your Name"
     report_to_email: "your_recipient_email@example.com" # Email address to send the report to
     days_to_fetch: 30 # Optional: Number of days to fetch events for. Default is 30 if not specified.
-    calendars:
+    sources:
       - type: "google"
         name: "Your Google Calendar Name"
         # For Google Calendar, you'll need credentials.json.
@@ -37,9 +38,15 @@ users:
         # url: "https://caldav.icloud.com"
         # Optional: Specify a particular calendar by name. If not specified, all calendars will be fetched.
         # calendar_name: "My Main Calendar"
+      - type: "trello"
+        name: "My Trello Board"
+        api_key: "YOUR_TRELLO_API_KEY"
+        api_token: "YOUR_TRELLO_API_TOKEN"
+        board_id: "YOUR_TRELLO_BOARD_ID"
+
 #  - name: "Another User"
 #    report_to_email: "another_recipient_email@example.com"
-#    calendars:
+#    sources:
 #      - type: "google"
 #        name: "Another Google Calendar Name"
 #        # calendar_ids:
